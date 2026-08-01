@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pikus Squeeze — unlimited link shortener</title>
+<meta name="description" content="Shorten unlimited links, free, no sign-up.">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@400;500;700;800&display=swap');
+
+  :root{
+    --ink:#15171A;
+    --ink-2:#1F2226;
+    --paper:#ECEAE2;
+    --line: rgba(236,234,226,0.12);
+    --line-strong: rgba(236,234,226,0.24);
+    --teal:#2BB7A6;
+    --teal-dim: rgba(43,183,166,0.15);
+    --amber:#E7A64C;
+    --danger:#D9695A;
+    --muted:#8A8D85;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--ink);
+    color:var(--paper);
+    font-family:'Manrope', sans-serif;
+    min-height:100vh;
+    padding:48px 20px 80px;
+  }
+  .wrap{max-width:640px;margin:0 auto;}
+
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:28px;
+  }
+  .brand .mark{
+    width:30px;height:30px;
+    border-radius:8px;
+    background:var(--teal);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'JetBrains Mono', monospace;
+    font-weight:700;
+    color:#08221E;
+    font-size:15px;
+    flex-shrink:0;
+  }
+  .brand .name{
+    font-family:'JetBrains Mono', monospace;
+    font-size:14px;
+    letter-spacing:0.06em;
+    color:var(--muted);
+  }
+  .brand .name b{color:var(--paper);}
+
+  h1{
+    font-family:'Manrope', sans-serif;
+    font-weight:800;
+    font-size:34px;
+    line-height:1.1;
+    margin:0 0 12px;
+    letter-spacing:-0.01em;
+  }
+  .sub{
+    color:var(--muted);
+    font-size:15px;
+    line-height:1.6;
+    margin:0 0 36px;
+    max-width:46ch;
+  }
+
+  .compressor{
+    position:relative;
+    border:1px solid var(--line-strong);
+    border-radius:14px;
+    background:var(--ink-2);
+    padding:6px;
+    display:flex;
+    gap:6px;
+  }
+  .compressor input{
+    flex:1;
+    background:transparent;
+    border:none;
+    outline:none;
+    color:var(--paper);
+    font-family:'JetBrains Mono', monospace;
+    font-size:14px;
+    padding:14px 14px;
+    min-width:0;
+  }
+  .compressor input::placeholder{color:var(--muted);}
+  .compressor button{
+    border:none;
+    background:var(--teal);
+    color:#08221E;
+    font-family:'Manrope', sans-serif;
+    font-weight:700;
+    font-size:14px;
+    padding:0 20px;
+    border-radius:9px;
+    cursor:pointer;
+    white-space:nowrap;
+    transition:transform .12s ease, opacity .12s ease;
+  }
+  .compressor button:hover{opacity:0.9;}
+  .compressor button:active{transform:scale(0.97);}
+  .compressor button:disabled{opacity:0.5;cursor:default;}
+
+  .status{
+    min-height:20px;
+    font-family:'JetBrains Mono', monospace;
+    font-size:12.5px;
+    margin-top:10px;
+    color:var(--muted);
+  }
+  .status.err{color:var(--danger);}
+
+  .result{
+    margin-top:22px;
+    border:1px solid var(--teal);
+    background:var(--teal-dim);
+    border-radius:12px;
+    padding:16px 18px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    animation:squeeze .32s cubic-bezier(.2,.8,.2,1);
+    transform-origin:left center;
+  }
+  @keyframes squeeze{
+    0%{transform:scaleX(0.85);opacity:0;}
+    100%{transform:scaleX(1);opacity:1;}
+  }
+  .result a{
+    font-family:'JetBrains Mono', monospace;
+    font-weight:700;
+    font-size:16px;
+    color:#B7F0E7;
+    text-decoration:none;
+    word-break:break-all;
+  }
+  .result a:hover{text-decoration:underline;}
+  .copy-btn{
+    border:1px solid var(--line-strong);
+    background:transparent;
+    color:var(--paper);
+    font-family:'Manrope',sans-serif;
+    font-size:13px;
+    font-weight:700;
+    padding:8px 12px;
+    border-radius:8px;
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .copy-btn:hover{background:rgba(236,234,226,0.06);}
+
+  .divider{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin:44px 0 18px;
+  }
+  .divider .label{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--muted);
+    white-space:nowrap;
+  }
+  .divider .rule{height:1px;background:var(--line);flex:1;}
+
+  .empty{
+    color:var(--muted);
+    font-size:14px;
+    padding:24px 0;
+    text-align:center;
+    border:1px dashed var(--line-strong);
+    border-radius:12px;
+  }
+
+  .row{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:14px 4px;
+    border-bottom:1px solid var(--line);
+  }
+  .row:last-child{border-bottom:none;}
+  .row .num{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    color:var(--muted);
+    width:26px;
+    flex-shrink:0;
+  }
+  .row .main{min-width:0;flex:1;}
+  .row .short{
+    font-family:'JetBrains Mono', monospace;
+    font-size:14px;
+    font-weight:700;
+    color:var(--amber);
+    text-decoration:none;
+    display:block;
+  }
+  .row .long{
+    font-size:12.5px;
+    color:var(--muted);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    margin-top:2px;
+  }
+  .row .actions{display:flex;gap:6px;flex-shrink:0;}
+  .icon-btn{
+    border:1px solid var(--line-strong);
+    background:transparent;
+    color:var(--paper);
+    width:30px;height:30px;
+    border-radius:7px;
+    cursor:pointer;
+    font-family:'JetBrains Mono', monospace;
+    font-size:13px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .icon-btn:hover{background:rgba(236,234,226,0.06);}
+  .icon-btn.danger:hover{background:rgba(217,105,90,0.15);border-color:var(--danger);color:var(--danger);}
+
+  .footnote{
+    margin-top:40px;
+    font-size:12.5px;
+    color:var(--muted);
+    line-height:1.6;
+  }
+  .footnote a{color:var(--muted);}
+
+  footer{
+    margin-top:60px;
+    text-align:center;
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    color:var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <div class="mark">P</div>
+    <div class="name"><b>Pikus</b> Squeeze</div>
+  </div>
+
+  <h1>Turn long links into short ones.</h1>
+  <p class="sub">Paste any URL, get a working short link back. No sign-up, no daily cap — make as many as you need, every day. Your history saves right in this browser for next time.</p>
+
+  <form class="compressor" id="form">
+    <input type="url" id="longUrl" placeholder="https://example.com/a/very/long/path?with=params" required autocomplete="off" />
+    <button type="submit" id="submitBtn">Shorten</button>
+  </form>
+  <div class="status" id="status"></div>
+
+  <div id="resultBox"></div>
+
+  <div class="divider"><span class="label">history</span><div class="rule"></div></div>
+  <div id="history"></div>
+
+  <p class="footnote">Short links are created through a public link-shortening service and work anywhere, for anyone. History is stored only in this browser, on this device.</p>
+
+  <footer>pikus squeeze</footer>
+</div>
+
+<script>
+const form = document.getElementById('form');
+const input = document.getElementById('longUrl');
+const statusEl = document.getElementById('status');
+const submitBtn = document.getElementById('submitBtn');
+const resultBox = document.getElementById('resultBox');
+const historyEl = document.getElementById('history');
+
+const STORE_KEY = 'pikus_squeeze_links';
+let links = [];
+
+function loadHistory(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    links = raw ? JSON.parse(raw) : [];
+  }catch(e){
+    links = [];
+  }
+  renderHistory();
+}
+
+function saveHistory(){
+  try{
+    localStorage.setItem(STORE_KEY, JSON.stringify(links));
+  }catch(e){}
+}
+
+function renderHistory(){
+  if(!links.length){
+    historyEl.innerHTML = '<div class="empty">Nothing shortened yet — your first link will show up here.</div>';
+    return;
+  }
+  historyEl.innerHTML = links.map((l, i) => `
+    <div class="row">
+      <div class="num">${String(links.length - i).padStart(2,'0')}</div>
+      <div class="main">
+        <a class="short" href="${l.short}" target="_blank" rel="noopener">${l.short.replace(/^https?:\/\//,'')}</a>
+        <div class="long">${l.long}</div>
+      </div>
+      <div class="actions">
+        <button class="icon-btn" title="Copy" onclick="copyLink('${l.short}', this)">⧉</button>
+        <button class="icon-btn danger" title="Remove" onclick="removeLink(${links.length - 1 - i})">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+window.copyLink = function(url, btn){
+  navigator.clipboard.writeText(url).then(()=>{
+    const old = btn.textContent;
+    btn.textContent = '✓';
+    setTimeout(()=>btn.textContent = old, 1000);
+  });
+}
+
+window.removeLink = function(idx){
+  links.splice(idx,1);
+  saveHistory();
+  renderHistory();
+}
+
+async function shorten(longUrl){
+  const attempts = [
+    async () => {
+      const r = await fetch('https://cleanuri.com/api/v1/shorten', {
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:'url=' + encodeURIComponent(longUrl)
+      });
+      const data = await r.json();
+      if(data && data.result_url) return data.result_url;
+      throw new Error(data && data.error ? data.error : 'cleanuri failed');
+    },
+    async () => {
+      const r = await fetch('https://tinyurl.com/api-create.php?url=' + encodeURIComponent(longUrl));
+      const text = await r.text();
+      if(text && text.startsWith('http')) return text.trim();
+      throw new Error('tinyurl failed');
+    },
+    async () => {
+      const r = await fetch('https://is.gd/create.php?format=simple&url=' + encodeURIComponent(longUrl));
+      const text = await r.text();
+      if(text && text.startsWith('http')) return text.trim();
+      throw new Error('is.gd failed');
+    }
+  ];
+
+  let lastErr;
+  for(const attempt of attempts){
+    try{
+      return await attempt();
+    }catch(e){
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('All shortening services failed');
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const longUrl = input.value.trim();
+  if(!longUrl) return;
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Squeezing…';
+  statusEl.textContent = '';
+  statusEl.className = 'status';
+  resultBox.innerHTML = '';
+
+  try{
+    const shortUrl = await shorten(longUrl);
+    links.unshift({ long: longUrl, short: shortUrl, date: new Date().toISOString() });
+    saveHistory();
+    renderHistory();
+
+    resultBox.innerHTML = `
+      <div class="result">
+        <a href="${shortUrl}" target="_blank" rel="noopener">${shortUrl}</a>
+        <button class="copy-btn" onclick="copyLink('${shortUrl}', this)">Copy</button>
+      </div>
+    `;
+    input.value = '';
+    statusEl.textContent = 'Ready — created just now.';
+  }catch(err){
+    statusEl.textContent = "Couldn't reach a shortening service right now. Check your connection and try again.";
+    statusEl.className = 'status err';
+  }finally{
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Shorten';
+  }
+});
+
+loadHistory();
+</script>
+</body>
+</html>
