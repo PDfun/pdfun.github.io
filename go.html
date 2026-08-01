@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pikus Squeeze — redirecting…</title>
+<style>
+  body{margin:0;background:#15171A;color:#ECEAE2;font-family:'JetBrains Mono',monospace;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;}
+  .box{max-width:420px;}
+  .dot{width:8px;height:8px;border-radius:50%;background:#2BB7A6;display:inline-block;margin-bottom:16px;animation:pulse 1s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.3;}}
+  p{font-size:14px;color:#8A8D85;line-height:1.6;}
+  a{color:#2BB7A6;}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="dot"></div>
+  <p id="msg">Redirecting…</p>
+</div>
+<script>
+(async function(){
+  const msg = document.getElementById('msg');
+  const code = decodeURIComponent(location.hash.slice(1));
+
+  // Figure out owner/repo from the current URL so this file works
+  // no matter what repo it's deployed in.
+  const parts = location.pathname.split('/').filter(Boolean);
+  const host = location.hostname; // e.g. username.github.io
+  const owner = host.split('.')[0];
+  const isRootSite = host === owner + '.github.io' && parts.length <= 1;
+  const repo = isRootSite ? (owner + '.github.io') : parts[0];
+  const branch = 'main';
+
+  if(!code){
+    msg.textContent = 'No short code given.';
+    return;
+  }
+
+  try{
+    const url = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/links.json?_=${Date.now()}`;
+    const res = await fetch(url, { cache: 'no-store' });
+    if(!res.ok) throw new Error('not found');
+    const data = await res.json();
+    const dest = data[code];
+    if(dest){
+      location.replace(dest);
+    } else {
+      msg.textContent = "This link doesn't exist or hasn't propagated yet — try again in a moment.";
+    }
+  }catch(e){
+    msg.textContent = "Couldn't resolve this link right now. Try again shortly.";
+  }
+})();
+</script>
+</body>
+</html>
