@@ -254,6 +254,7 @@ function initApp(){
 
   async function ghApi(path, options={}){
     const res = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`, {
+      cache: 'no-store',
       ...options,
       headers: {
         'Authorization': `Bearer ${cfg.token}`,
@@ -299,9 +300,21 @@ function initApp(){
       throw new Error('Connect your GitHub account first (⚙ top right).');
     }
     const code = randCode();
-    const { data, sha } = await getLinksFile();
-    data[code] = longUrl;
-    await putLinksFile(data, sha, `Add short link ${code}`);
+
+    let attempt = 0;
+    while(true){
+      const { data, sha } = await getLinksFile();
+      data[code] = longUrl;
+      try{
+        await putLinksFile(data, sha, `Add short link ${code}`);
+        break;
+      }catch(err){
+        attempt++;
+        const isConflict = /does not match|409/i.test(err.message || '');
+        if(isConflict && attempt < 3) continue; // re-fetch latest sha and retry
+        throw err;
+      }
+    }
 
     const owner = cfg.owner.toLowerCase();
     const isRootSite = cfg.repo.toLowerCase() === `${owner}.github.io`;
