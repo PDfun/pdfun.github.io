@@ -129,193 +129,228 @@
 <script>
 const CFG_KEY = 'pikus_gh_config';
 const HIST_KEY = 'pikus_squeeze_links';
+const shortCode = decodeURIComponent(location.hash.slice(1));
 
-const $ = (id) => document.getElementById(id);
-const gearBtn = $('gearBtn'), panel = $('panel');
-const ghOwner = $('ghOwner'), ghRepo = $('ghRepo'), ghBranch = $('ghBranch'), ghToken = $('ghToken');
-const saveSettings = $('saveSettings'), savedMsg = $('savedMsg');
-const form = $('form'), input = $('longUrl'), statusEl = $('status'), submitBtn = $('submitBtn');
-const resultBox = $('resultBox'), historyEl = $('history');
-
-let cfg = { owner:'', repo:'', branch:'main', token:'' };
-let cachedSha = null;
-let links = [];
-
-function loadConfig(){
-  try{ cfg = { ...cfg, ...JSON.parse(localStorage.getItem(CFG_KEY) || '{}') }; }catch(e){}
-  ghOwner.value = cfg.owner || '';
-  ghRepo.value = cfg.repo || '';
-  ghBranch.value = cfg.branch || 'main';
-  ghToken.value = cfg.token || '';
-  if(!cfg.owner || !cfg.repo || !cfg.token){ panel.classList.add('open'); }
+// If the page was opened as a short link (e.g. /#jxybay), resolve it and
+// redirect immediately instead of showing the tool. Everything else on
+// this page only runs when there's no short code to resolve.
+if(shortCode){
+  document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:monospace;color:#8A8D85;">Redirecting…</div>';
+  resolveShortLink(shortCode);
+} else {
+  initApp();
 }
 
-saveSettings.addEventListener('click', () => {
-  cfg = {
-    owner: ghOwner.value.trim(),
-    repo: ghRepo.value.trim(),
-    branch: (ghBranch.value.trim() || 'main'),
-    token: ghToken.value.trim()
-  };
-  localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
-  cachedSha = null;
-  savedMsg.style.display = 'inline';
-  setTimeout(()=> savedMsg.style.display='none', 2000);
-});
+async function resolveShortLink(code){
+  const parts = location.pathname.split('/').filter(Boolean);
+  const owner = location.hostname.split('.')[0];
+  const isRootSite = location.hostname === owner + '.github.io' && parts.length === 0;
+  const repo = isRootSite ? (owner + '.github.io') : parts[0];
 
-gearBtn.addEventListener('click', () => panel.classList.toggle('open'));
-
-function loadHistory(){
-  try{ links = JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); }catch(e){ links = []; }
-  renderHistory();
-}
-function saveHistory(){ localStorage.setItem(HIST_KEY, JSON.stringify(links)); }
-
-function renderHistory(){
-  if(!links.length){
-    historyEl.innerHTML = '<div class="empty">Nothing shortened yet — your first link will show up here.</div>';
-    return;
-  }
-  historyEl.innerHTML = links.map((l, i) => `
-    <div class="row">
-      <div class="num">${String(links.length - i).padStart(2,'0')}</div>
-      <div class="main">
-        <a class="short" href="${l.short}" target="_blank" rel="noopener">${l.short.replace(/^https?:\/\//,'')}</a>
-        <div class="long">${l.long}</div>
-      </div>
-      <div class="actions">
-        <button class="icon-btn" title="Copy" onclick="copyLink('${l.short}', this)">⧉</button>
-        <button class="icon-btn danger" title="Remove from history" onclick="removeLink(${links.length - 1 - i})">✕</button>
-      </div>
-    </div>
-  `).join('');
-}
-
-window.copyLink = function(url, btn){
-  navigator.clipboard.writeText(url).then(()=>{
-    const old = btn.textContent;
-    btn.textContent = '✓';
-    setTimeout(()=>btn.textContent = old, 1000);
-  });
-}
-window.removeLink = function(idx){
-  links.splice(idx,1);
-  saveHistory();
-  renderHistory();
-}
-
-function randCode(len=6){
-  const chars = 'abcdefghijkmnpqrstuvwxyz23456789';
-  let out = '';
-  for(let i=0;i<len;i++) out += chars[Math.floor(Math.random()*chars.length)];
-  return out;
-}
-
-function b64encode(str){
-  return btoa(unescape(encodeURIComponent(str)));
-}
-function b64decode(str){
-  return decodeURIComponent(escape(atob(str)));
-}
-
-async function ghApi(path, options={}){
-  const res = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`, {
-    ...options,
-    headers: {
-      'Authorization': `Bearer ${cfg.token}`,
-      'Accept': 'application/vnd.github+json',
-      ...(options.headers || {})
-    }
-  });
-  return res;
-}
-
-async function getLinksFile(){
-  const res = await ghApi(`links.json?ref=${cfg.branch}`);
-  if(res.status === 404){
-    return { data: {}, sha: null };
-  }
-  if(!res.ok) throw new Error(`GitHub read failed (${res.status})`);
-  const json = await res.json();
-  cachedSha = json.sha;
-  let data = {};
-  try{ data = JSON.parse(b64decode(json.content)); }catch(e){ data = {}; }
-  return { data, sha: json.sha };
-}
-
-async function putLinksFile(data, sha, message){
-  const body = {
-    message,
-    content: b64encode(JSON.stringify(data, null, 2)),
-    branch: cfg.branch
-  };
-  if(sha) body.sha = sha;
-  const res = await ghApi('links.json', { method:'PUT', body: JSON.stringify(body) });
-  if(!res.ok){
-    const err = await res.json().catch(()=>({}));
-    throw new Error(err.message || `GitHub write failed (${res.status})`);
-  }
-  const json = await res.json();
-  cachedSha = json.content.sha;
-  return json;
-}
-
-async function createShortLink(longUrl){
-  if(!cfg.owner || !cfg.repo || !cfg.token){
-    throw new Error('Connect your GitHub account first (⚙ top right).');
-  }
-  const code = randCode();
-  const { data, sha } = await getLinksFile();
-  data[code] = longUrl;
-  await putLinksFile(data, sha, `Add short link ${code}`);
-
-  const owner = cfg.owner.toLowerCase();
-  const isRootSite = cfg.repo.toLowerCase() === `${owner}.github.io`;
-  const base = isRootSite
-    ? `https://${owner}.github.io`
-    : `https://${owner}.github.io/${cfg.repo}`;
-  return `${base}/go.html#${code}`;
-}
-
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const longUrl = input.value.trim();
-  if(!longUrl) return;
-
-  submitBtn.disabled = true;
-  submitBtn.textContent = 'Squeezing…';
-  statusEl.textContent = '';
-  statusEl.className = 'status';
-  resultBox.innerHTML = '';
-
-  const t0 = performance.now();
   try{
-    const shortUrl = await createShortLink(longUrl);
-    const ms = Math.round(performance.now() - t0);
-    links.unshift({ long: longUrl, short: shortUrl, date: new Date().toISOString() });
+    const url = `https://raw.githubusercontent.com/${owner}/${repo}/main/links.json?_=${Date.now()}`;
+    const res = await fetch(url, { cache:'no-store' });
+    if(!res.ok) throw new Error('not found');
+    const data = await res.json();
+    const dest = data[code];
+    if(dest){
+      location.replace(dest);
+    } else {
+      document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:monospace;color:#8A8D85;text-align:center;padding:20px;">This link doesn\'t exist or hasn\'t propagated yet — try again in a moment.</div>';
+    }
+  }catch(e){
+    document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:monospace;color:#8A8D85;text-align:center;padding:20px;">Couldn\'t resolve this link right now.</div>';
+  }
+}
+
+function initApp(){
+  const $ = (id) => document.getElementById(id);
+  const gearBtn = $('gearBtn'), panel = $('panel');
+  const ghOwner = $('ghOwner'), ghRepo = $('ghRepo'), ghBranch = $('ghBranch'), ghToken = $('ghToken');
+  const saveSettings = $('saveSettings'), savedMsg = $('savedMsg');
+  const form = $('form'), input = $('longUrl'), statusEl = $('status'), submitBtn = $('submitBtn');
+  const resultBox = $('resultBox'), historyEl = $('history');
+
+  let cfg = { owner:'', repo:'', branch:'main', token:'' };
+  let cachedSha = null;
+  let links = [];
+
+  function loadConfig(){
+    try{ cfg = { ...cfg, ...JSON.parse(localStorage.getItem(CFG_KEY) || '{}') }; }catch(e){}
+    ghOwner.value = cfg.owner || '';
+    ghRepo.value = cfg.repo || '';
+    ghBranch.value = cfg.branch || 'main';
+    ghToken.value = cfg.token || '';
+    if(!cfg.owner || !cfg.repo || !cfg.token){ panel.classList.add('open'); }
+  }
+
+  saveSettings.addEventListener('click', () => {
+    cfg = {
+      owner: ghOwner.value.trim(),
+      repo: ghRepo.value.trim(),
+      branch: (ghBranch.value.trim() || 'main'),
+      token: ghToken.value.trim()
+    };
+    localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+    cachedSha = null;
+    savedMsg.style.display = 'inline';
+    setTimeout(()=> savedMsg.style.display='none', 2000);
+  });
+
+  gearBtn.addEventListener('click', () => panel.classList.toggle('open'));
+
+  function loadHistory(){
+    try{ links = JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); }catch(e){ links = []; }
+    renderHistory();
+  }
+  function saveHistory(){ localStorage.setItem(HIST_KEY, JSON.stringify(links)); }
+
+  function renderHistory(){
+    if(!links.length){
+      historyEl.innerHTML = '<div class="empty">Nothing shortened yet — your first link will show up here.</div>';
+      return;
+    }
+    historyEl.innerHTML = links.map((l, i) => `
+      <div class="row">
+        <div class="num">${String(links.length - i).padStart(2,'0')}</div>
+        <div class="main">
+          <a class="short" href="${l.short}" target="_blank" rel="noopener">${l.short.replace(/^https?:\/\//,'')}</a>
+          <div class="long">${l.long}</div>
+        </div>
+        <div class="actions">
+          <button class="icon-btn" title="Copy" onclick="copyLink('${l.short}', this)">⧉</button>
+          <button class="icon-btn danger" title="Remove from history" onclick="removeLink(${links.length - 1 - i})">✕</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  window.copyLink = function(url, btn){
+    navigator.clipboard.writeText(url).then(()=>{
+      const old = btn.textContent;
+      btn.textContent = '✓';
+      setTimeout(()=>btn.textContent = old, 1000);
+    });
+  }
+  window.removeLink = function(idx){
+    links.splice(idx,1);
     saveHistory();
     renderHistory();
-
-    resultBox.innerHTML = `
-      <div class="result">
-        <a href="${shortUrl}" target="_blank" rel="noopener">${shortUrl}</a>
-        <button class="copy-btn" onclick="copyLink('${shortUrl}', this)">Copy</button>
-      </div>
-    `;
-    input.value = '';
-    statusEl.textContent = `Created in ${ms}ms. New links can take a few seconds to become live.`;
-    statusEl.className = 'status ok';
-  }catch(err){
-    statusEl.textContent = err.message || 'Something went wrong. Check your GitHub connection.';
-    statusEl.className = 'status err';
-  }finally{
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Shorten';
   }
-});
 
-loadConfig();
-loadHistory();
+  function randCode(len=6){
+    const chars = 'abcdefghijkmnpqrstuvwxyz23456789';
+    let out = '';
+    for(let i=0;i<len;i++) out += chars[Math.floor(Math.random()*chars.length)];
+    return out;
+  }
+
+  function b64encode(str){
+    return btoa(unescape(encodeURIComponent(str)));
+  }
+  function b64decode(str){
+    return decodeURIComponent(escape(atob(str)));
+  }
+
+  async function ghApi(path, options={}){
+    const res = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${cfg.token}`,
+        'Accept': 'application/vnd.github+json',
+        ...(options.headers || {})
+      }
+    });
+    return res;
+  }
+
+  async function getLinksFile(){
+    const res = await ghApi(`links.json?ref=${cfg.branch}`);
+    if(res.status === 404){
+      return { data: {}, sha: null };
+    }
+    if(!res.ok) throw new Error(`GitHub read failed (${res.status})`);
+    const json = await res.json();
+    cachedSha = json.sha;
+    let data = {};
+    try{ data = JSON.parse(b64decode(json.content)); }catch(e){ data = {}; }
+    return { data, sha: json.sha };
+  }
+
+  async function putLinksFile(data, sha, message){
+    const body = {
+      message,
+      content: b64encode(JSON.stringify(data, null, 2)),
+      branch: cfg.branch
+    };
+    if(sha) body.sha = sha;
+    const res = await ghApi('links.json', { method:'PUT', body: JSON.stringify(body) });
+    if(!res.ok){
+      const err = await res.json().catch(()=>({}));
+      throw new Error(err.message || `GitHub write failed (${res.status})`);
+    }
+    const json = await res.json();
+    cachedSha = json.content.sha;
+    return json;
+  }
+
+  async function createShortLink(longUrl){
+    if(!cfg.owner || !cfg.repo || !cfg.token){
+      throw new Error('Connect your GitHub account first (⚙ top right).');
+    }
+    const code = randCode();
+    const { data, sha } = await getLinksFile();
+    data[code] = longUrl;
+    await putLinksFile(data, sha, `Add short link ${code}`);
+
+    const owner = cfg.owner.toLowerCase();
+    const isRootSite = cfg.repo.toLowerCase() === `${owner}.github.io`;
+    const base = isRootSite
+      ? `https://${owner}.github.io`
+      : `https://${owner}.github.io/${cfg.repo}`;
+    return `${base}/#${code}`;
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const longUrl = input.value.trim();
+    if(!longUrl) return;
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Squeezing…';
+    statusEl.textContent = '';
+    statusEl.className = 'status';
+    resultBox.innerHTML = '';
+
+    const t0 = performance.now();
+    try{
+      const shortUrl = await createShortLink(longUrl);
+      const ms = Math.round(performance.now() - t0);
+      links.unshift({ long: longUrl, short: shortUrl, date: new Date().toISOString() });
+      saveHistory();
+      renderHistory();
+
+      resultBox.innerHTML = `
+        <div class="result">
+          <a href="${shortUrl}" target="_blank" rel="noopener">${shortUrl}</a>
+          <button class="copy-btn" onclick="copyLink('${shortUrl}', this)">Copy</button>
+        </div>
+      `;
+      input.value = '';
+      statusEl.textContent = `Created in ${ms}ms. New links can take a few seconds to become live.`;
+      statusEl.className = 'status ok';
+    }catch(err){
+      statusEl.textContent = err.message || 'Something went wrong. Check your GitHub connection.';
+      statusEl.className = 'status err';
+    }finally{
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Shorten';
+    }
+  });
+
+  loadConfig();
+  loadHistory();
+}
 </script>
 </body>
 </html>
