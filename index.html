@@ -2,6 +2,32 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script>
+// Runs before anything else on the page (styles, fonts, etc.) so a short
+// link redirects the moment the destination is known — no waiting on the
+// rest of the page to load first.
+(function(){
+  var code = decodeURIComponent(location.hash.slice(1));
+  if(!code) return;
+
+  var parts = location.pathname.split('/').filter(Boolean);
+  var owner = location.hostname.split('.')[0];
+  var isRootSite = location.hostname === owner + '.github.io' && parts.length === 0;
+  var repo = isRootSite ? (owner + '.github.io') : parts[0];
+  var url = 'https://raw.githubusercontent.com/' + owner + '/' + repo + '/main/links.json?_=' + Date.now();
+
+  fetch(url, { cache: 'no-store' }).then(function(res){
+    if(!res.ok) throw new Error('not found');
+    return res.json();
+  }).then(function(data){
+    var dest = data[code];
+    if(dest){ location.replace(dest); }
+    else { document.write('<p style="font-family:monospace;color:#8A8D85;padding:40px;">This link doesn\'t exist or hasn\'t propagated yet — try again in a moment.</p>'); }
+  }).catch(function(){
+    document.write('<p style="font-family:monospace;color:#8A8D85;padding:40px;">Couldn\'t resolve this link right now.</p>');
+  });
+})();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pikus Squeeze — your own link shortener</title>
 <meta name="description" content="Shorten unlimited links on your own domain, free, no sign-up.">
@@ -129,38 +155,12 @@
 <script>
 const CFG_KEY = 'pikus_gh_config';
 const HIST_KEY = 'pikus_squeeze_links';
-const shortCode = decodeURIComponent(location.hash.slice(1));
 
-// If the page was opened as a short link (e.g. /#jxybay), resolve it and
-// redirect immediately instead of showing the tool. Everything else on
-// this page only runs when there's no short code to resolve.
-if(shortCode){
-  document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:monospace;color:#8A8D85;">Redirecting…</div>';
-  resolveShortLink(shortCode);
-} else {
+// The head script (top of the page) already redirects short links before
+// we even get here. If we've reached this point and there's still no short
+// code, start the tool normally.
+if(!location.hash){
   initApp();
-}
-
-async function resolveShortLink(code){
-  const parts = location.pathname.split('/').filter(Boolean);
-  const owner = location.hostname.split('.')[0];
-  const isRootSite = location.hostname === owner + '.github.io' && parts.length === 0;
-  const repo = isRootSite ? (owner + '.github.io') : parts[0];
-
-  try{
-    const url = `https://raw.githubusercontent.com/${owner}/${repo}/main/links.json?_=${Date.now()}`;
-    const res = await fetch(url, { cache:'no-store' });
-    if(!res.ok) throw new Error('not found');
-    const data = await res.json();
-    const dest = data[code];
-    if(dest){
-      location.replace(dest);
-    } else {
-      document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:monospace;color:#8A8D85;text-align:center;padding:20px;">This link doesn\'t exist or hasn\'t propagated yet — try again in a moment.</div>';
-    }
-  }catch(e){
-    document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:monospace;color:#8A8D85;text-align:center;padding:20px;">Couldn\'t resolve this link right now.</div>';
-  }
 }
 
 function initApp(){
