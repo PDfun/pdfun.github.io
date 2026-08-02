@@ -14,18 +14,58 @@
   var owner = location.hostname.split('.')[0];
   var isRootSite = location.hostname === owner + '.github.io' && parts.length === 0;
   var repo = isRootSite ? (owner + '.github.io') : parts[0];
-  var url = 'https://raw.githubusercontent.com/' + owner + '/' + repo + '/main/links.json?_=' + Date.now();
 
-  fetch(url, { cache: 'no-store' }).then(function(res){
-    if(!res.ok) throw new Error('not found');
-    return res.json();
-  }).then(function(data){
-    var dest = data[code];
-    if(dest){ location.replace(dest); }
-    else { document.write('<p style="font-family:monospace;color:#8A8D85;padding:40px;">This link doesn\'t exist or hasn\'t propagated yet — try again in a moment.</p>'); }
-  }).catch(function(){
-    document.write('<p style="font-family:monospace;color:#8A8D85;padding:40px;">Couldn\'t resolve this link right now.</p>');
-  });
+  function b64decode(str){
+    return decodeURIComponent(escape(atob(str)));
+  }
+
+  function showMsg(text){
+    document.write('<p style="font-family:monospace;color:#8A8D85;padding:40px;">' + text + '</p>');
+  }
+
+  // The GitHub API reflects a fresh commit right away. raw.githubusercontent.com
+  // is CDN-cached and can lag a minute or more, so it's only the fallback.
+  function lookupViaApi(){
+    return fetch('https://api.github.com/repos/' + owner + '/' + repo + '/contents/links.json?ref=main', {
+      cache: 'no-store',
+      headers: { 'Accept': 'application/vnd.github+json' }
+    }).then(function(res){
+      if(!res.ok) throw new Error('api failed');
+      return res.json();
+    }).then(function(json){
+      return JSON.parse(b64decode(json.content));
+    });
+  }
+
+  function lookupViaRaw(){
+    return fetch('https://raw.githubusercontent.com/' + owner + '/' + repo + '/main/links.json?_=' + Date.now(), {
+      cache: 'no-store'
+    }).then(function(res){
+      if(!res.ok) throw new Error('raw failed');
+      return res.json();
+    });
+  }
+
+  function attempt(tries){
+    lookupViaApi().catch(lookupViaRaw).then(function(data){
+      var dest = data[code];
+      if(dest){
+        location.replace(dest);
+      } else if(tries > 0){
+        setTimeout(function(){ attempt(tries - 1); }, 1200);
+      } else {
+        showMsg("This link doesn't exist or hasn't propagated yet — try again in a moment.");
+      }
+    }).catch(function(){
+      if(tries > 0){
+        setTimeout(function(){ attempt(tries - 1); }, 1200);
+      } else {
+        showMsg("Couldn't resolve this link right now.");
+      }
+    });
+  }
+
+  attempt(3);
 })();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">

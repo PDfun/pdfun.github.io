@@ -25,10 +25,10 @@
 
   // Figure out owner/repo from the current URL so this file works
   // no matter what repo it's deployed in.
-  const parts = location.pathname.split('/').filter(Boolean);
+  const parts = location.pathname.split('/').filter(Boolean).filter(p => p !== 'go.html');
   const host = location.hostname; // e.g. username.github.io
   const owner = host.split('.')[0];
-  const isRootSite = host === owner + '.github.io' && parts.length <= 1;
+  const isRootSite = host === owner + '.github.io' && parts.length === 0;
   const repo = isRootSite ? (owner + '.github.io') : parts[0];
   const branch = 'main';
 
@@ -37,20 +37,32 @@
     return;
   }
 
-  try{
-    const url = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/links.json?_=${Date.now()}`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if(!res.ok) throw new Error('not found');
-    const data = await res.json();
-    const dest = data[code];
-    if(dest){
-      location.replace(dest);
-    } else {
-      msg.textContent = "This link doesn't exist or hasn't propagated yet — try again in a moment.";
-    }
-  }catch(e){
-    msg.textContent = "Couldn't resolve this link right now. Try again shortly.";
+  function b64decode(str){ return decodeURIComponent(escape(atob(str))); }
+
+  async function lookupViaApi(){
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/links.json?ref=${branch}`, {
+      cache: 'no-store', headers: { 'Accept': 'application/vnd.github+json' }
+    });
+    if(!res.ok) throw new Error('api failed');
+    const json = await res.json();
+    return JSON.parse(b64decode(json.content));
   }
+
+  async function lookupViaRaw(){
+    const res = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/links.json?_=${Date.now()}`, { cache: 'no-store' });
+    if(!res.ok) throw new Error('raw failed');
+    return res.json();
+  }
+
+  for(let tries = 3; tries >= 0; tries--){
+    try{
+      const data = await lookupViaApi().catch(lookupViaRaw);
+      const dest = data[code];
+      if(dest){ location.replace(dest); return; }
+    }catch(e){}
+    if(tries > 0) await new Promise(r => setTimeout(r, 1200));
+  }
+  msg.textContent = "This link doesn't exist or hasn't propagated yet — try again in a moment.";
 })();
 </script>
 </body>
